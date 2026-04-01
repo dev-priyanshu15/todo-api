@@ -6,6 +6,8 @@ import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import type { Request } from 'express';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -36,4 +38,15 @@ export class AuthController {
     const user = req.user as any;
     return this.authService.refreshTokens(user.id, user.email);
   }
+  @Post('forgot-password')
+@Throttle({ medium: { ttl: 60000, limit: 3 } })
+forgotPassword(@Body() dto: ForgotPasswordDto) {
+  return this.authService.forgotPassword(dto.email);
+}
+
+@Post('reset-password')
+@HttpCode(200)
+resetPassword(@Body() dto: ResetPasswordDto) {
+  return this.authService.resetPassword(dto);
+}
 }

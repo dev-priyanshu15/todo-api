@@ -5,7 +5,8 @@ import * as bcrypt from 'bcrypt';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { EmailProducer } from '../queue/producers/email.producer';
-
+import * as crypto from 'crypto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 @Injectable()
 export class AuthService {
   constructor(
@@ -115,4 +116,75 @@ export class AuthService {
       data: { refreshToken: hashed },
     });
   }
+  async forgotPassword(email: string) {
+  // step 1: user dhundo
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+  // step 2: user nahi mila → same response
+    if (!user) return { message: 'If that email is registered, you will receive a password reset link' };
+  // step 3: random token generate
+    const token = crypto.randomBytes(32).toString('hex');
+  // step 4: token hash karo
+    const hashedToken = crypto
+  .createHash('sha256')
+  .update(token)
+  .digest('hex');
+  // step 5: expiry set karo  // step 6: DB mein save karo
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + parseInt(process.env.RESET_TOKEN_EXPIRY_HOURS || '1'));
+    await this.prisma.user.update({
+      where: { email },
+      data: {
+        resetToken: hashedToken,
+        resetTokenExpiry: expiry,
+      },
+    });
+ 
+
+
+  // step 7: email queue mein daalo
+    await this.emailProducer.sendPasswordResetEmail({
+      to: user.email,
+      token,
+    }); 
+  // step 8: return same response
+    return { message: 'If that email is registered, you will receive a password reset link' };
+  }
+  async resetPassword(dto: ResetPasswordDto) {
+  // step 1: token hash karo
+    const hashedToken = crypto
+  .createHash('sha256')
+  .update(dto.token)
+  .digest('hex');
+  // step 2: DB mein dhundo
+const user = await this.prisma.user.findFirst({
+  where: {
+    resetToken: hashedToken,
+    resetTokenExpiry: {
+      gt: new Date(),
+    },
+  },
+});
+
+  // step 3: user nahi mila → error 
+    if (!user) throw new BadRequestException('Invalid or expired token');
+  // step 4: password hash karo
+    const hashedPassword = await bcrypt.hash(dto.newPassword, 10);
+
+  // step 5: update karo
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        resetToken: null,
+        resetTokenExpiry: null,
+        refreshToken: null,
+      },
+    });
+
+  // step 6: return message
+    return { message: 'Password reset successfully' };
+}
 }
